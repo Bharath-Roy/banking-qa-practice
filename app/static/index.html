@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Practice Bank</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; background: #f2f4f7; color: #1d2733; }
+  header { background: #12355b; color: #fff; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+  main { max-width: 760px; margin: 24px auto; padding: 0 16px; }
+  section { background: #fff; border: 1px solid #d8dde3; border-radius: 4px; padding: 16px; margin-bottom: 16px; }
+  h1, h2 { margin: 0 0 12px; font-size: 18px; }
+  label { display: block; margin: 8px 0 2px; font-size: 14px; }
+  input, select { padding: 6px; width: 100%; max-width: 320px; box-sizing: border-box; }
+  button { margin-top: 12px; padding: 7px 16px; cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border-bottom: 1px solid #e3e7eb; padding: 6px 8px; text-align: left; }
+  .error { color: #b00020; margin-top: 8px; }
+  .ok { color: #1b6e2d; margin-top: 8px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Practice Bank</strong>
+  <span id="whoami"></span>
+  <button id="logout" class="hidden" type="button">Logout</button>
+</header>
+<main>
+  <section id="login-box">
+    <h1>Net banking login</h1>
+    <form id="login-form">
+      <label for="username">Username</label>
+      <input id="username" autocomplete="off">
+      <label for="password">Password</label>
+      <input id="password" type="password">
+      <button type="submit">Login</button>
+      <div id="login-msg" class="error" role="alert"></div>
+    </form>
+  </section>
+
+  <div id="app" class="hidden">
+    <section>
+      <h2>Account summary</h2>
+      <table id="accounts">
+        <thead><tr><th>Account number</th><th>Type</th><th>Balance (INR)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Fund transfer</h2>
+      <form id="transfer-form">
+        <label for="from">From account</label>
+        <select id="from"></select>
+        <label for="to">To account number</label>
+        <input id="to" autocomplete="off">
+        <label for="amount">Amount</label>
+        <input id="amount" autocomplete="off">
+        <label for="remark">Remark (optional)</label>
+        <input id="remark" autocomplete="off">
+        <button type="submit">Transfer</button>
+        <div id="transfer-msg" role="alert"></div>
+      </form>
+    </section>
+
+    <section>
+      <h2>Transaction history</h2>
+      <label for="hist-account">Account</label>
+      <select id="hist-account"></select>
+      <button id="hist-load" type="button">Show</button>
+      <table id="history">
+        <thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Amount</th><th>Balance</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </div>
+</main>
+
+<script>
+let token = null;
+const $ = (id) => document.getElementById(id);
+
+async function api(path, options = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = "Bearer " + token;
+  const res = await fetch(path, { ...options, headers });
+  const data = await res.json().catch(() => ({}));
+  return { status: res.status, data };
+}
+
+function setMessage(el, text, ok) {
+  el.textContent = text;
+  el.className = ok ? "ok" : "error";
+}
+
+async function loadAccounts() {
+  const { data } = await api("/api/accounts");
+  const body = $("accounts").querySelector("tbody");
+  body.innerHTML = "";
+  for (const sel of [$("from"), $("hist-account")]) sel.innerHTML = "";
+  for (const a of data.accounts) {
+    const row = body.insertRow();
+    row.insertCell().textContent = a.account_no;
+    row.insertCell().textContent = a.account_type;
+    row.insertCell().textContent = a.balance;
+    for (const sel of [$("from"), $("hist-account")]) {
+      sel.add(new Option(a.account_no + " (" + a.account_type + ")", a.account_no));
+    }
+  }
+}
+
+async function loadHistory() {
+  const no = $("hist-account").value;
+  const { data } = await api("/api/accounts/" + no + "/transactions?limit=20");
+  const body = $("history").querySelector("tbody");
+  body.innerHTML = "";
+  for (const t of data.transactions || []) {
+    const row = body.insertRow();
+    [t.date, t.description, t.type, t.amount, t.balance_after].forEach((v) => {
+      row.insertCell().textContent = v;
+    });
+  }
+}
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { status, data } = await api("/api/login", {
+    method: "POST",
+    body: JSON.stringify({ username: $("username").value, password: $("password").value }),
+  });
+  if (status !== 200) return setMessage($("login-msg"), data.error || "Login failed", false);
+  token = data.token;
+  $("login-box").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  $("logout").classList.remove("hidden");
+  $("whoami").textContent = "Welcome, " + data.user.full_name;
+  await loadAccounts();
+  await loadHistory();
+});
+
+$("transfer-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const { status, data } = await api("/api/transfers", {
+    method: "POST",
+    body: JSON.stringify({
+      from_account: $("from").value,
+      to_account: $("to").value.trim(),
+      amount: $("amount").value.trim(),
+      remark: $("remark").value,
+    }),
+  });
+  if (status === 201) {
+    setMessage($("transfer-msg"), "Transfer successful. Reference " + data.reference, true);
+    await loadAccounts();
+    await loadHistory();
+  } else {
+    setMessage($("transfer-msg"), data.error || "Transfer failed", false);
+  }
+});
+
+$("hist-load").addEventListener("click", loadHistory);
+$("logout").addEventListener("click", () => location.reload());
+</script>
+</body>
+</html>
