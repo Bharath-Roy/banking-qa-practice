@@ -1,0 +1,79 @@
+Summary,Issue Type,Priority,Labels,Description
+Failed login count is not cleared after a successful login,Bug,High,login,"Build 1.0, severity Major
+
+Steps:
+1. Reset data
+2. Login as ravi with a wrong password, twice
+3. Login as ravi with the correct password (works)
+4. Login with a wrong password once more
+5. Login with the correct password
+
+Expected: step 5 works, only 1 wrong attempt since the good login.
+Actual: 423 ACCOUNT_LOCKED, the wrong attempts are added together.
+
+Test case: TC-LGN-06"
+Amount with 3 decimals is accepted and silently cut to 2,Bug,Medium,transfer,"Build 1.0, severity Major
+
+Steps:
+1. Login as asha
+2. Transfer 100.999 from 5010000101 to 5010000201
+
+Expected: 400 INVALID_AMOUNT, no money moves.
+Actual: 201 SUCCESS, 100.99 debited, balance 25000.00 -> 24899.01.
+
+Test case: TC-TRF-09"
+Savings transfer that leaves exactly 500.00 is rejected,Bug,Low,transfer,"Build 1.0, severity Minor
+
+Steps:
+1. Login as ravi (savings 10000.00)
+2. Transfer 9500.00 to 5010000101
+
+Expected: 201, balance 500.00 (minimum balance is 500.00, so exactly 500.00 is allowed).
+Actual: 400 MIN_BALANCE, balance stays 10000.00.
+
+Test case: TC-TRF-16"
+Transfer fails with a 500 when the remark has an apostrophe,Bug,Medium,transfer,"Build 1.0, severity Major
+
+Steps:
+1. Login as asha
+2. Transfer 10 from 5010000101 to 5010000201 with remark: Ravi's rent & deposit
+
+Expected: 201.
+Actual: 500 Internal server error. Balances unchanged afterwards.
+
+The remark looks like it is not escaped before it goes into the SQL statement.
+
+Test case: TC-TRF-19"
+Transfer between own accounts has no credit entry in the history,Bug,High,transfer,"Build 1.0, severity Major
+
+Steps:
+1. Login as asha
+2. Transfer 2000 from 5010000101 to 5010000102
+3. Open the history of 5010000102 (CREDIT)
+
+Expected: credit entry 'Transfer from 5010000101' for 2000.00.
+Actual: no entry, but the balance went up by 2000.
+
+SQL check Q1 (balance vs ledger) and Q2 (transfers with a missing leg) both return rows.
+
+Test cases: TC-TRF-20, TC-DB-01, TC-DB-02"
+Transaction history is oldest first,Bug,Medium,history,"Build 1.0, severity Major
+
+Steps:
+1. Login as asha, transfer 100 to ravi
+2. Transaction history -> 5010000101 -> Show
+
+Expected: the new transfer on top, Opening balance last.
+Actual: Opening balance first, new transfer at the bottom. With the limit of 20 rows the newest entries are cut off once an account has more than 20.
+
+Test case: TC-HIS-01"
+Any logged in customer can read another customer's transaction history,Bug,High,history,"Build 1.0, severity Critical
+
+Steps:
+1. Login as ravi, keep the token
+2. GET /api/accounts/5010000101/transactions with ravi's token (asha's account)
+
+Expected: 404.
+Actual: 200 with asha's transactions.
+
+Test case: TC-HIS-05"
